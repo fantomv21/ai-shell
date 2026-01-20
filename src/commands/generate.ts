@@ -1,5 +1,6 @@
 import ora from "ora";
 import { spawn } from "child_process";
+import chalk from "chalk";
 import { askOllama } from "../llm/ollama.js";
 import { isSafe } from "../safety/validator.js";
 import { getShell } from "../utils/os.js";
@@ -32,19 +33,20 @@ RULES:
    - "run test.py" -> python test.py
 7. Git commands:
    - "git status" -> git status
-   - "commit all changes with message X" -> git add . && git commit -m "X"
+   - "commit all changes with message X" -> git add .; git commit -m "X"
    - "create branch X" -> git checkout -b X
    - "switch to branch X" -> git checkout X
    - "push changes" -> git push
    - "pull latest" -> git pull
    - "show commits" or "commit history" -> git log --oneline -10
+   NOTE: Use semicolon (;) NOT && for command chaining in PowerShell
 8. Greetings: "hi"/"hello" -> Write-Host "Hello!"
 
 EXAMPLES:
 - User: "install pandas" -> pip install pandas
 - User: "python print hello" -> python -c "print('hello')"
 - User: "run test.py" -> python test.py
-- User: "commit all with message 'fix'" -> git add . && git commit -m "fix"
+- User: "commit all with message 'fix'" -> git add .; git commit -m "fix"
 - User: "create branch dev" -> git checkout -b dev
 - User: "create file test.txt" -> New-Item test.txt -ItemType File -Force
 - User: "go to src" -> cd src
@@ -52,7 +54,7 @@ EXAMPLES:
 User request: ${userPrompt}
 Command:`;
 
-  const spinner = ora("Generating command...").start();
+  const spinner = ora(chalk.yellow("Generating command...")).start();
 
   try {
     let cmd = await askOllama(systemPrompt, options.model);
@@ -69,7 +71,7 @@ Command:`;
     cmd = cmd.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").replace(/^`+|`+$/g, "").trim();
 
     if (!cmd) {
-      console.error("❌ Could not generate a command");
+      console.error(chalk.red("❌ Could not generate a command"));
       return;
     }
 
@@ -79,17 +81,17 @@ Command:`;
         cmd.includes('DownloadFile') || 
         cmd.includes('DownloadString') ||
         cmd.match(/powershell\s+-Command/i)) {
-      console.error("❌ Command too complex or suspicious - try being more specific");
+      console.error(chalk.red("❌ Command too complex or suspicious - try being more specific"));
       return;
     }
 
     if (!isSafe(cmd)) {
-      console.error("❌ Unsafe command blocked");
+      console.error(chalk.red.bold("❌ Unsafe command blocked"));
       return;
     }
 
-    console.log("\n✅ Generated command:\n");
-    console.log(`→ ${cmd}\n`);
+    console.log(chalk.green("\n✅ Generated command:\n"));
+    console.log(chalk.green(`→ ${chalk.bold.white(cmd)}\n`));
 
     if (options.execute) {
       // Auto-execute without confirmation
@@ -101,7 +103,7 @@ Command:`;
 
       await new Promise<void>((resolve, reject) => {
         child.on('error', (err) => {
-          console.error(`❌ Execution error: ${err.message}`);
+          console.error(chalk.red(`❌ Execution error: ${err.message}`));
           reject(err);
         });
 
@@ -112,6 +114,6 @@ Command:`;
     }
   } catch (err) {
     spinner.stop();
-    console.error("❌ Error talking to Ollama");
+    console.error(chalk.red.bold("❌ Error talking to Ollama"));
   }
 }

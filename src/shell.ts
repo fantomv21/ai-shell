@@ -3,6 +3,7 @@ import readline from "readline";
 import { spawn } from "child_process";
 import path from "path";
 import process from "process";
+import chalk from "chalk";
 import { askOllama } from "./llm/ollama.js";
 import { isSafe } from "./safety/validator.js";
 import { isGitRepo, getCurrentBranch, getGitStatus } from "./utils/git.js";
@@ -29,6 +30,44 @@ function getShellType(): string {
 }
 
 /**
+ * Autocomplete suggestions list
+ */
+const AUTOCOMPLETE_SUGGESTIONS = [
+  // Built-in commands
+  'help', 'exit', 'quit', 'path', 'pwd', 'cwd', 'gst', 'gitstatus',
+  // Common actions
+  'install ', 'create file ', 'create folder ', 'open file ',
+  'go to ', 'cd ', 'list ', 'show files', 'show ',
+  // Python
+  'python ', 'run ', 'execute python code ',
+  // Git
+  'git status', 'git log', 'git branch',
+  'commit all changes with message ',
+  'create branch ', 'switch to branch ',
+  'push changes', 'pull latest', 'show commit history',
+  // Common packages
+  'install pandas', 'install numpy', 'install express',
+  'install react', 'install flask', 'install django'
+];
+
+/**
+ * Autocomplete function for common commands
+ */
+function autocomplete(line: string): [string[], string] {
+  const hits = AUTOCOMPLETE_SUGGESTIONS.filter((c) => c.startsWith(line));
+  return [hits.length ? hits : AUTOCOMPLETE_SUGGESTIONS, line];
+}
+
+/**
+ * Get inline suggestion for current input
+ */
+function getInlineSuggestion(line: string): string {
+  if (!line) return '';
+  const match = AUTOCOMPLETE_SUGGESTIONS.find((s) => s.startsWith(line) && s !== line);
+  return match ? match.slice(line.length) : '';
+}
+
+/**
  * Home directory (cross-platform)
  */
 const HOME_DIR =
@@ -40,38 +79,69 @@ const HOME_DIR =
  * Start the interactive shell REPL
  */
 export async function startShell(model: string = DEFAULT_MODEL) {
-  console.log("\n" + "=".repeat(60));
-  console.log("🧠  NL Shell - Natural Language Shell Interface");
-  console.log("=".repeat(60));
-  console.log(`\n📦  Model: ${model}`);
-  console.log(`💻  Platform: ${process.platform}`);
-  console.log(`📁  Working Directory: ${process.cwd()}`);
+  console.log("\n" + chalk.cyan("=".repeat(60)));
+  console.log(chalk.bold.cyan("🧠  NL Shell - Natural Language Shell Interface"));
+  console.log(chalk.cyan("=".repeat(60)));
+  console.log(chalk.green(`\n📦  Model: ${chalk.yellow(model)}`));
+  console.log(chalk.green(`💻  Platform: ${chalk.yellow(process.platform)}`));
+  console.log(chalk.green(`📁  Working Directory: ${chalk.yellow(process.cwd())}`));
   
   // Show git info if in a repo
   const inGitRepo = await isGitRepo();
   if (inGitRepo) {
     const branch = await getCurrentBranch();
-    console.log(`🌱  Git Branch: ${branch}`);
+    console.log(chalk.green(`🌱  Git Branch: ${chalk.magenta(branch)}`));
   }
  
-  console.log(`\n💡  Type 'help' for commands | 'exit' or 'quit' to leave`);
-  console.log("=".repeat(60) + "\n");
+  console.log(chalk.blue(`\n💡  Type ${chalk.bold('help')} for commands | ${chalk.bold('exit')} or ${chalk.bold('quit')} to leave`));
+  console.log(chalk.cyan("=".repeat(60)) + "\n");
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `${SHELL_NAME} ❯ `
+    prompt: chalk.bold.cyan(`${SHELL_NAME} ❯ `),
+    completer: autocomplete,
+    terminal: true
   });
+
+  // Variable to track current line for suggestions
+  let lastLine = '';
+
+  // Override _onLine to show suggestions
+  const originalWrite = (rl as any)._writeToOutput;
+  (rl as any)._writeToOutput = function (stringToWrite: string) {
+    originalWrite.call(rl, stringToWrite);
+    
+    // Get current line without prompt
+    const currentLine = (rl as any).line || '';
+    
+    if (currentLine && currentLine !== lastLine) {
+      lastLine = currentLine;
+      const suggestion = getInlineSuggestion(currentLine);
+      
+      if (suggestion) {
+        // Show suggestion in gray
+        const fullSuggestion = currentLine + suggestion;
+        process.stdout.write(chalk.gray(suggestion));
+        // Move cursor back to actual position
+        for (let i = 0; i < suggestion.length; i++) {
+          process.stdout.write('\x1b[D');
+        }
+      }
+    }
+  };
 
   // Handle manual SIGINT (Ctrl+C) to prevent exit
   rl.on('SIGINT', () => {
     console.log(`\n(Type 'quit' or 'exit' to leave)`);
+    lastLine = '';
     rl.prompt();
   });
 
   // Main input loop
   rl.on('line', async (line) => {
     const text = line.trim();
+    lastLine = '';
 
     if (!text) {
       rl.prompt();
@@ -80,7 +150,7 @@ export async function startShell(model: string = DEFAULT_MODEL) {
 
     // --- Built-in Commands ---
     if (text === 'exit' || text === 'quit') {
-      console.log('👋 Goodbye');
+      console.log(chalk.yellow('👋 Goodbye'));
       process.exit(0);
     }
 
@@ -130,7 +200,7 @@ EXAMPLES:
     }
 
     if (text === 'pwd' || text === 'path' || text === 'where' || text === 'cwd') {
-      console.log(`📁 ${process.cwd()}`);
+      console.log(chalk.blue(`📁 ${chalk.cyan(process.cwd())}`));
       rl.prompt();
       return;
     }
@@ -138,12 +208,12 @@ EXAMPLES:
     if (text === 'gst' || text === 'gitstatus') {
       const inGitRepo = await isGitRepo();
       if (!inGitRepo) {
-        console.log('❌ Not a git repository');
+        console.log(chalk.red('❌ Not a git repository'));
       } else {
         const branch = await getCurrentBranch();
         const status = await getGitStatus();
-        console.log(`🌱 Branch: ${branch}`);
-        console.log(`\nStatus:\n${status}`);
+        console.log(chalk.green(`🌱 Branch: ${chalk.magenta(branch)}`));
+        console.log(chalk.gray(`\nStatus:\n${status}`));
       }
       rl.prompt();
       return;
@@ -155,16 +225,16 @@ EXAMPLES:
       try {
         const newDir = path.resolve(process.cwd(), target);
         process.chdir(newDir);
-        console.log(`📁 ${newDir}`);
+        console.log(chalk.blue(`📁 ${chalk.cyan(newDir)}`))
       } catch (err: any) {
-        console.error(`❌ cd failed: ${err.message}`);
+        console.error(chalk.red(`❌ cd failed: ${err.message}`));
       }
       rl.prompt();
       return;
     }
 
     // --- AI Command Generation ---
-    process.stdout.write("⏳ Thinking... ");
+    process.stdout.write(chalk.yellow("⏳ Thinking... "));
 
     try {
       const prompt = `You are a ${getShellType()} command generator. Current directory: ${process.cwd()}
@@ -188,19 +258,20 @@ RULES:
    - "run test.py" -> python test.py
 7. Git commands:
    - "git status" -> git status
-   - "commit all changes with message X" -> git add . && git commit -m "X"
+   - "commit all changes with message X" -> git add .; git commit -m "X"
    - "create branch X" -> git checkout -b X
    - "switch to branch X" -> git checkout X
    - "push changes" -> git push
    - "pull latest" -> git pull
    - "show commits" or "commit history" -> git log --oneline -10
+   NOTE: Use semicolon (;) NOT && for command chaining in PowerShell
 8. Greetings: "hi"/"hello" -> Write-Host "Hello!"
 
 EXAMPLES:
 - User: "install pandas" -> pip install pandas
 - User: "python print hello" -> python -c "print('hello')"
 - User: "run test.py" -> python test.py
-- User: "commit all with message 'fix'" -> git add . && git commit -m "fix"
+- User: "commit all with message 'fix'" -> git add .; git commit -m "fix"
 - User: "create branch dev" -> git checkout -b dev
 - User: "create file test.txt" -> New-Item test.txt -ItemType File -Force
 - User: "go to src" -> cd src
@@ -227,7 +298,7 @@ Command:`;
       command = command.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").replace(/^`+|`+$/g, "").trim();
 
       if (!command) {
-        console.log("❌ Could not generate a command");
+        console.log(chalk.red("❌ Could not generate a command"));
         rl.prompt();
         return;
       }
@@ -238,7 +309,7 @@ Command:`;
           command.includes('DownloadFile') || 
           command.includes('DownloadString') ||
           command.match(/powershell\s+-Command/i)) {
-        console.log("❌ Command too complex or suspicious - try being more specific");
+        console.log(chalk.red("❌ Command too complex or suspicious - try being more specific"));
         rl.prompt();
         return;
       }
@@ -252,12 +323,12 @@ Command:`;
       }
 
       if (!isSafe(command)) {
-        console.log("❌ Unsafe command blocked");
+        console.log(chalk.red.bold("❌ Unsafe command blocked"));
         rl.prompt();
         return;
       }
 
-      console.log(`→ ${command}`);
+      console.log(chalk.green(`→ ${chalk.bold.white(command)}`));
 
       // --- Special Case: Navigation (cd) ---
       // We must handle 'cd' in the PARENT process, otherwise it only changes the child's CWD.
@@ -269,9 +340,9 @@ Command:`;
           // Resolve path (can be relative or absolute)
           const newDir = path.resolve(process.cwd(), target);
           process.chdir(newDir);
-          console.log(`📂 Changed directory to: ${newDir}`);
+          console.log(chalk.blue(`📂 Changed directory to: ${chalk.cyan(newDir)}`));
         } catch (err: any) {
-          console.error(`❌ cd failed: ${err.message}`);
+          console.error(chalk.red(`❌ cd failed: ${err.message}`));
         }
         rl.prompt();
         return;
@@ -288,7 +359,7 @@ Command:`;
       });
 
       child.on('error', (err) => {
-        console.error(`❌ Execution error: ${err.message}`);
+        console.error(chalk.red(`❌ Execution error: ${err.message}`));
         rl.resume();
         rl.prompt();
       });
@@ -302,7 +373,7 @@ Command:`;
     } catch (err) {
       process.stdout.clearLine(0);
       process.stdout.cursorTo(0);
-      console.error("❌ Error communicating with Ollama");
+      console.error(chalk.red.bold("❌ Error communicating with Ollama"));
       rl.prompt();
     }
   });
