@@ -68,6 +68,68 @@ function getInlineSuggestion(line: string): string {
 }
 
 /**
+ * AI Chat Mode - for asking questions and getting explanations
+ */
+async function startChatMode(rl: readline.Interface, model: string) {
+  console.log(chalk.magenta.bold(`\n🤖 AI Chat Mode Started`));
+  console.log(chalk.magenta(`Type ${chalk.bold('back')} or ${chalk.bold('exit')} to return to command mode\n`));
+
+  const chatPrompt = chalk.magenta.bold(`chat ❯ `);
+  rl.setPrompt(chatPrompt);
+  rl.prompt();
+
+  // Override the line handler for chat mode
+  const originalListener = rl.listeners('line')[0];
+  rl.removeAllListeners('line');
+
+  rl.on('line', async (line) => {
+    const text = line.trim();
+
+    // Exit chat mode
+    if (text === 'back' || text === 'exit' || text === 'quit') {
+      console.log(chalk.magenta.bold(`\n👈 Returning to command mode\n`));
+      
+      // Restore original listener and prompt
+      rl.removeAllListeners('line');
+      rl.on('line', originalListener as any);
+      rl.setPrompt(chalk.bold.cyan(`${SHELL_NAME} ❯ `));
+      rl.prompt();
+      return;
+    }
+
+    if (!text) {
+      rl.prompt();
+      return;
+    }
+
+    // Send to AI for chat response
+    process.stdout.write(chalk.yellow("⏳ Thinking... "));
+
+    try {
+      const chatPromptMsg = `You are a helpful assistant. Answer the user's question concisely and clearly in 2-3 sentences.
+
+User question: ${text}
+
+Provide a helpful, friendly response.`;
+
+      const response = await askOllama(chatPromptMsg, model);
+      
+      // Clear "Thinking..."
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+
+      console.log(chalk.cyan(`\n${response}\n`));
+    } catch (err) {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      console.error(chalk.red.bold("\n❌ Error communicating with Ollama\n"));
+    }
+
+    rl.prompt();
+  });
+}
+
+/**
  * Home directory (cross-platform)
  */
 const HOME_DIR =
@@ -154,6 +216,11 @@ export async function startShell(model: string = DEFAULT_MODEL) {
       process.exit(0);
     }
 
+    if (text === 'chat' || text === 'enter chat') {
+      await startChatMode(rl, model);
+      return;
+    }
+
     if (text === 'help') {
       console.log(`
 🧠 NL Shell - Natural Language Shell Commands
@@ -166,6 +233,13 @@ WHAT I CAN DO:
   📋 List directory        → "show files", "list contents"
   🔍 Search files          → "find all .txt files"
   💬 Chat                  → "hi", "hello"
+  
+🤖 AI CHAT MODE:
+  • "chat" or "enter chat" - Toggle to chat mode
+  • Ask questions: "how do I deploy to AWS?"
+  • Get explanations: "explain what REST API is"
+  • Tips & tricks: "give me npm shortcuts"
+  • In chat mode, type "back" or "exit" to return
   
 🐍 PYTHON COMMANDS:
   • "run python script.py"
@@ -185,13 +259,14 @@ WHAT I CAN DO:
 BUILT-IN COMMANDS:
   path, pwd, cwd          → Show current directory
   gst, gitstatus          → Show git status
+  chat                    → Enter AI chat mode
   help                    → Show this message
   exit, quit              → Exit shell
 
 EXAMPLES:
   nlsh ❯ install numpy
   nlsh ❯ python print(2+2)
-  nlsh ❯ run script.py
+  nlsh ❯ chat
   nlsh ❯ commit all changes with message 'initial commit'
   nlsh ❯ show files
 `);
