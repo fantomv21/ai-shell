@@ -257,9 +257,7 @@ WHAT I CAN DO:
   • "show commit history"
   
 BUILT-IN COMMANDS:
-  path, pwd, cwd          → Show current directory
-  gst, gitstatus          → Show git status
-  chat                    → Enter AI chat mode
+
   help                    → Show this message
   exit, quit              → Exit shell
 
