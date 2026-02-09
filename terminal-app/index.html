@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLSH Terminal</title>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0f;
+            color: #e5e5e5;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Custom Title Bar */
+        .title-bar {
+            height: 32px;
+            background: linear-gradient(180deg, #1a1a25 0%, #12121a 100%);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            -webkit-app-region: drag;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+        }
+
+        .title-bar-icon {
+            font-size: 16px;
+            margin-right: 10px;
+        }
+
+        .title-bar-text {
+            font-size: 12px;
+            font-weight: 500;
+            color: #a0a0a0;
+            flex: 1;
+        }
+
+        .title-bar-controls {
+            display: flex;
+            -webkit-app-region: no-drag;
+        }
+
+        .title-bar-btn {
+            width: 46px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            color: #a0a0a0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .title-bar-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .title-bar-btn.close:hover {
+            background: #e81123;
+            color: #fff;
+        }
+
+        .title-bar-btn svg {
+            width: 10px;
+            height: 10px;
+        }
+
+        /* Tab Bar */
+        .tab-bar {
+            height: 36px;
+            background: #12121a;
+            display: flex;
+            align-items: flex-end;
+            padding: 0 8px;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .tab {
+            height: 32px;
+            padding: 0 16px;
+            background: #1a1a25;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #e5e5e5;
+            cursor: pointer;
+        }
+
+        .tab.active {
+            background: #0a0a0f;
+            border-color: rgba(0, 212, 255, 0.3);
+        }
+
+        .tab-icon {
+            font-size: 14px;
+        }
+
+        .tab-name {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .new-tab-btn {
+            width: 28px;
+            height: 28px;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: #666;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 4px;
+            margin-bottom: 4px;
+            transition: all 0.15s;
+        }
+
+        .new-tab-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Terminal Container */
+        .terminal-container {
+            flex: 1;
+            padding: 8px;
+            background: #0a0a0f;
+            overflow: hidden;
+        }
+
+        #terminal {
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            height: 24px;
+            background: #12121a;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            font-size: 11px;
+            color: #666;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+            gap: 16px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #00ff88;
+            box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
+        }
+
+        .status-dot.warning {
+            background: #fbbf24;
+            box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
+        }
+
+        .status-spacer {
+            flex: 1;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0a0f;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+
+        /* Custom xterm.js overrides */
+        .xterm {
+            padding: 4px;
+        }
+
+        .xterm-viewport {
+            overflow-y: auto !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Custom Title Bar -->
+    <div class="title-bar">
+        <span class="title-bar-icon">🧠</span>
+        <span class="title-bar-text">NLSH Terminal</span>
+        <div class="title-bar-controls">
+            <button class="title-bar-btn" id="minimize-btn" title="Minimize">
+                <svg viewBox="0 0 10 10">
+                    <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1" />
+                </svg>
+            </button>
+            <button class="title-bar-btn" id="maximize-btn" title="Maximize">
+                <svg viewBox="0 0 10 10">
+                    <rect x="0" y="0" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1" />
+                </svg>
+            </button>
+            <button class="title-bar-btn close" id="close-btn" title="Close">
+                <svg viewBox="0 0 10 10">
+                    <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1" />
+                    <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        <div class="tab active">
+            <span class="tab-icon">🧠</span>
+            <span class="tab-name">nlsh</span>
+        </div>
+        <button class="new-tab-btn" title="New Tab">+</button>
+    </div>
+
+    <!-- Terminal -->
+    <div class="terminal-container">
+        <div id="terminal"></div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-dot" id="status-indicator"></span>
+            <span id="status-text">Connected</span>
+        </div>
+        <div class="status-item">
+            <span>🧠 nlsh</span>
+        </div>
+        <div class="status-spacer"></div>
+        <div class="status-item" id="dims-display">120×30</div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        const { Terminal } = require('@xterm/xterm');
+        const { FitAddon } = require('@xterm/addon-fit');
+        const { WebLinksAddon } = require('@xterm/addon-web-links');
+
+        // Create terminal with custom theme
+        const term = new Terminal({
+            fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace',
+            fontSize: 14,
+            lineHeight: 1.2,
+            cursorBlink: true,
+            cursorStyle: 'bar',
+            theme: {
+                background: '#0a0a0f',
+                foreground: '#e5e5e5',
+                cursor: '#00d4ff',
+                cursorAccent: '#0a0a0f',
+                selectionBackground: 'rgba(0, 212, 255, 0.3)',
+                black: '#1a1a25',
+                red: '#ef4444',
+                green: '#00ff88',
+                yellow: '#fbbf24',
+                blue: '#3b82f6',
+                magenta: '#a855f7',
+                cyan: '#00d4ff',
+                white: '#e5e5e5',
+                brightBlack: '#666666',
+                brightRed: '#f87171',
+                brightGreen: '#4ade80',
+                brightYellow: '#fcd34d',
+                brightBlue: '#60a5fa',
+                brightMagenta: '#c084fc',
+                brightCyan: '#22d3ee',
+                brightWhite: '#ffffff'
+            },
+            allowTransparency: true,
+            scrollback: 5000
+        });
+
+        // Add addons
+        const fitAddon = new FitAddon();
+        const webLinksAddon = new WebLinksAddon();
+        term.loadAddon(fitAddon);
+        term.loadAddon(webLinksAddon);
+
+        // Open terminal in container
+        const container = document.getElementById('terminal');
+        term.open(container);
+        fitAddon.fit();
+
+        // Update dimensions display
+        function updateDims() {
+            document.getElementById('dims-display').textContent = `${term.cols}×${term.rows}`;
+        }
+        updateDims();
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            ipcRenderer.send('terminal-resize', { cols: term.cols, rows: term.rows });
+            updateDims();
+        });
+
+        // Initial resize notification
+        ipcRenderer.send('terminal-resize', { cols: term.cols, rows: term.rows });
+
+        // Handle terminal input
+        term.onData((data) => {
+            ipcRenderer.send('terminal-input', data);
+        });
+
+        // Handle PTY output
+        ipcRenderer.on('terminal-data', (event, data) => {
+            term.write(data);
+        });
+
+        // Handle PTY exit
+        ipcRenderer.on('terminal-exit', (event, code) => {
+            document.getElementById('status-indicator').classList.add('warning');
+            document.getElementById('status-text').textContent = `Exited (${code})`;
+            term.write('\r\n\x1b[33m[Process exited. Press any key to restart...]\x1b[0m\r\n');
+        });
+
+        // Window controls
+        document.getElementById('minimize-btn').addEventListener('click', () => {
+            ipcRenderer.send('window-minimize');
+        });
+
+        document.getElementById('maximize-btn').addEventListener('click', () => {
+            ipcRenderer.send('window-maximize');
+        });
+
+        document.getElementById('close-btn').addEventListener('click', () => {
+            ipcRenderer.send('window-close');
+        });
+
+        // Focus terminal on click
+        container.addEventListener('click', () => {
+            term.focus();
+        });
+
+        // Focus terminal initially
+        term.focus();
+
+        // Keyboard shortcut for restart (Ctrl+Shift+R)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'R') {
+                e.preventDefault();
+                ipcRenderer.send('restart-nlsh');
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { askOllama } from "./llm/ollama.js";
 import { isSafe } from "./safety/validator.js";
 import { isGitRepo, getCurrentBranch, getGitStatus } from "./utils/git.js";
+import { listenAndRecognize } from "./voice/speech-to-text.js";
 
 /**
  * Shell configuration
@@ -88,7 +89,7 @@ async function startChatMode(rl: readline.Interface, model: string) {
     // Exit chat mode
     if (text === 'back' || text === 'exit' || text === 'quit') {
       console.log(chalk.magenta.bold(`\n👈 Returning to command mode\n`));
-      
+
       // Restore original listener and prompt
       rl.removeAllListeners('line');
       rl.on('line', originalListener as any);
@@ -113,7 +114,7 @@ User question: ${text}
 Provide a helpful, friendly response.`;
 
       const response = await askOllama(chatPromptMsg, model);
-      
+
       // Clear "Thinking..."
       process.stdout.clearLine(0);
       process.stdout.cursorTo(0);
@@ -141,20 +142,26 @@ const HOME_DIR =
  * Start the interactive shell REPL
  */
 export async function startShell(model: string = DEFAULT_MODEL) {
+  if (process.stdin.isTTY) {
+    readline.emitKeypressEvents(process.stdin);
+    if (process.stdin.setRawMode) {
+      process.stdin.setRawMode(true);
+    }
+  }
   console.log("\n" + chalk.cyan("=".repeat(60)));
   console.log(chalk.bold.cyan("🧠  NL Shell - Natural Language Shell Interface"));
   console.log(chalk.cyan("=".repeat(60)));
   console.log(chalk.green(`\n📦  Model: ${chalk.yellow(model)}`));
   console.log(chalk.green(`💻  Platform: ${chalk.yellow(process.platform)}`));
   console.log(chalk.green(`📁  Working Directory: ${chalk.yellow(process.cwd())}`));
-  
+
   // Show git info if in a repo
   const inGitRepo = await isGitRepo();
   if (inGitRepo) {
     const branch = await getCurrentBranch();
     console.log(chalk.green(`🌱  Git Branch: ${chalk.magenta(branch)}`));
   }
- 
+
   console.log(chalk.blue(`\n💡  Type ${chalk.bold('help')} for commands | ${chalk.bold('exit')} or ${chalk.bold('quit')} to leave`));
   console.log(chalk.cyan("=".repeat(60)) + "\n");
 
@@ -173,14 +180,14 @@ export async function startShell(model: string = DEFAULT_MODEL) {
   const originalWrite = (rl as any)._writeToOutput;
   (rl as any)._writeToOutput = function (stringToWrite: string) {
     originalWrite.call(rl, stringToWrite);
-    
+
     // Get current line without prompt
     const currentLine = (rl as any).line || '';
-    
+
     if (currentLine && currentLine !== lastLine) {
       lastLine = currentLine;
       const suggestion = getInlineSuggestion(currentLine);
-      
+
       if (suggestion) {
         // Show suggestion in gray
         const fullSuggestion = currentLine + suggestion;
@@ -199,6 +206,40 @@ export async function startShell(model: string = DEFAULT_MODEL) {
     lastLine = '';
     rl.prompt();
   });
+
+  // --- Keyboard Shortcuts (The "Buttons") ---
+  if (process.stdin.isTTY) {
+    process.stdin.on('keypress', async (str, key) => {
+      // Ctrl+O to Trigger Voice (Open Mic)
+      if (key && key.ctrl && key.name === 'o') {
+        try {
+          // Clear current line to avoid mess
+          process.stdout.clearLine(0);
+          process.stdout.cursorTo(0);
+
+          rl.pause(); // Pause standard input
+
+          const spokenCommand = await listenAndRecognize();
+
+          rl.resume(); // Resume standard input
+
+          if (spokenCommand) {
+            console.log(chalk.green(`🎤 Heard: "${chalk.bold(spokenCommand)}"`));
+            rl.emit('line', spokenCommand);
+          } else {
+            rl.prompt();
+          }
+        } catch (err: any) {
+          rl.resume();
+          // Error already logged by listenAndRecognize usually, but just in case:
+          if (!err.message.includes('No speech detected')) {
+            console.error(chalk.red(`\n❌ Voice Error: ${err.message}`));
+          }
+          rl.prompt();
+        }
+      }
+    });
+  }
 
   // Main input loop
   rl.on('line', async (line) => {
@@ -221,6 +262,32 @@ export async function startShell(model: string = DEFAULT_MODEL) {
       return;
     }
 
+    // --- Voice Command ---
+    if (text === 'voice' || text === 'listen') {
+      try {
+        // Pause readline to prevent interference
+        rl.pause();
+
+        const spokenCommand = await listenAndRecognize();
+
+        rl.resume(); // Resume readline
+
+        if (spokenCommand) {
+          console.log(chalk.green(`🎤 Heard: "${chalk.bold(spokenCommand)}"`));
+
+          // Emit the line event to process the command as if typed
+          rl.emit('line', spokenCommand);
+        } else {
+          rl.prompt();
+        }
+      } catch (err: any) {
+        rl.resume();
+        console.error(chalk.red(`\n❌ Voice Error: ${err.message}`));
+        rl.prompt();
+      }
+      return;
+    }
+
     if (text === 'help') {
       console.log(`
 🧠 NL Shell - Natural Language Shell Commands
@@ -233,6 +300,7 @@ WHAT I CAN DO:
   📋 List directory        → "show files", "list contents"
   🔍 Search files          → "find all .txt files"
   💬 Chat                  → "hi", "hello"
+  🎤 Voice Input           → "voice", "listen" OR Press Ctrl+O
   
 🤖 AI CHAT MODE:
   • "chat" or "enter chat" - Toggle to chat mode
@@ -310,47 +378,49 @@ EXAMPLES:
     process.stdout.write(chalk.yellow("⏳ Thinking... "));
 
     try {
-      const prompt = `You are a ${getShellType()} command generator. Current directory: ${process.cwd()}
+      const shellType = getShellType();
+      const prompt = `You are a ${shellType} command generator for Windows. Current directory: ${process.cwd()}
 
-RULES:
-1. Output ONLY ONE simple command. NO explanations, NO markdown, NO code blocks.
-2. Keep it SIMPLE. Do NOT generate complex scripts or chained commands.
-3. Package installation:
-   - Python packages: pip install PACKAGE_NAME
-   - Node packages: npm install PACKAGE_NAME
-   - NEVER use Install-Module, Invoke-WebRequest, or download scripts
-4. Navigation: ONLY when user says "go to X", "cd to X", "navigate to X" -> cd X
-5. File operations:
-   - "open file X" -> notepad X
-   - "create file X" -> New-Item X -ItemType File -Force
-   - "create folder X" -> New-Item X -ItemType Directory -Force
-6. Python commands:
-   - "python print hello" -> python -c "print('hello')"
-   - "run python script.py" -> python script.py
-   - "execute python code X" -> python -c "X"
-   - "run test.py" -> python test.py
-7. Git commands:
-   - "git status" -> git status
-   - "commit all changes with message X" -> git add .; git commit -m "X"
-   - "create branch X" -> git checkout -b X
-   - "switch to branch X" -> git checkout X
-   - "push changes" -> git push
-   - "pull latest" -> git pull
-   - "show commits" or "commit history" -> git log --oneline -10
-   NOTE: Use semicolon (;) NOT && for command chaining in PowerShell
-8. Greetings: "hi"/"hello" -> Write-Host "Hello!"
+CRITICAL RULES:
+1. Output ONLY the executable command. NO explanations, NO markdown, NO code blocks.
+2. Keep it SIMPLE. Avoid complex multi-step operations.
+3. NEVER use placeholder text like "REPO_URL", "YOUR_URL", "PATH" - ask for specifics or skip that part.
+4. ${shellType === 'PowerShell' ? 'IMPORTANT: Use SEMICOLON (;) to chain commands, NOT && which fails in PowerShell!' : 'Use && to chain commands.'}
+
+COMMAND PATTERNS:
+- Package installation:
+   • Python: pip install PACKAGE_NAME
+   • Node: npm install PACKAGE_NAME
+   • NEVER use Install-Module, Invoke-WebRequest, or download scripts
+   
+- Navigation: cd DIRECTORY_NAME
+
+- File operations:
+   • "open file X" -> notepad X  
+   • "create file X" -> New-Item X -ItemType File -Force
+   • "create folder X" -> New-Item X -ItemType Directory -Force
+
+- Python:
+   • "python print X" -> python -c "print('X')"
+   • "run script.py" -> python script.py
+
+- Git commands (USE ; NOT &&):
+   • "git status" -> git status
+   • "commit all with message X" -> git add .; git commit -m "X"
+   • "create branch X" -> git checkout -b X
+   • "switch to X" -> git checkout X
+   • "push" -> git push
+   • "pull" -> git pull
+   • "create new repo" -> git init
+   • "create repo and push" -> git init; git add .; git commit -m "Initial commit"
+   
+- Greetings: Write-Host "Hello!"
 
 EXAMPLES:
-- User: "install pandas" -> pip install pandas
-- User: "python print hello" -> python -c "print('hello')"
-- User: "run test.py" -> python test.py
-- User: "commit all with message 'fix'" -> git add .; git commit -m "fix"
-- User: "create branch dev" -> git checkout -b dev
-- User: "create file test.txt" -> New-Item test.txt -ItemType File -Force
-- User: "go to src" -> cd src
-- User: "install numpy" -> pip install numpy
-- User: "create file test.txt" -> New-Item test.txt -ItemType File -Force
-- User: "go to src" -> cd src
+- "install pandas" -> pip install pandas
+- "commit all with message 'fix'" -> git add .; git commit -m "fix"
+- "create new repo" -> git init
+- "go to src" -> cd src
 
 User request: ${text}
 Command:`;
@@ -366,7 +436,7 @@ Command:`;
         .split("\n")
         .map(l => l.trim())
         .filter(Boolean)[0] || "";
-      
+
       // Remove markdown code blocks and backticks
       command = command.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").replace(/^`+|`+$/g, "").trim();
 
@@ -377,11 +447,11 @@ Command:`;
       }
 
       // Block overly complex/suspicious commands
-      if (command.length > 200 || 
-          command.includes('Invoke-WebRequest') || 
-          command.includes('DownloadFile') || 
-          command.includes('DownloadString') ||
-          command.match(/powershell\s+-Command/i)) {
+      if (command.length > 200 ||
+        command.includes('Invoke-WebRequest') ||
+        command.includes('DownloadFile') ||
+        command.includes('DownloadString') ||
+        command.match(/powershell\s+-Command/i)) {
         console.log(chalk.red("❌ Command too complex or suspicious - try being more specific"));
         rl.prompt();
         return;
@@ -392,6 +462,19 @@ Command:`;
         // If we see typical python deps, force pip
         if (command.match(/\b(pandas|numpy|matplotlib|scikit-learn|django|flask|torch|tensorflow|scipy|requests|beautifulsoup4|sqlalchemy|pytest|jupyter)\b/i)) {
           command = command.replace(/Install-Module\s+(\S+).*/i, "pip install $1");
+        }
+      }
+
+      // --- PowerShell-specific fixes ---
+      if (process.platform === 'win32') {
+        // Convert bash-style && to PowerShell-compatible ;
+        command = command.replace(/\s*&&\s*/g, '; ');
+
+        // Block commands with placeholder URLs (AI sometimes generates these)
+        if (command.match(/\b(REPO_URL|YOUR_URL|URL_HERE|REMOTE_URL|ORIGIN_URL)\b/i)) {
+          console.log(chalk.yellow("⚠️  That requires a specific URL. Try: git remote add origin https://github.com/user/repo.git"));
+          rl.prompt();
+          return;
         }
       }
 

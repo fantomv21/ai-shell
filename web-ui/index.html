@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="NLSH - Natural Language Shell - A modern AI-powered terminal interface">
+  <title>NLSH - Natural Language Shell</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Glowing Background Effects -->
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="bg-glow bg-glow-3"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">🧠</span>
+          <span class="logo-text">NLSH</span>
+        </div>
+        <span class="version-badge">v1.0</span>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-mode="shell">
+          <span class="nav-icon">💻</span>
+          <span class="nav-label">Terminal</span>
+        </button>
+        <button class="nav-btn" data-mode="chat">
+          <span class="nav-icon">🤖</span>
+          <span class="nav-label">AI Chat</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-section">
+        <h3 class="section-title">Quick Commands</h3>
+        <div class="quick-commands">
+          <button class="quick-cmd" data-cmd="show files">📁 List Files</button>
+          <button class="quick-cmd" data-cmd="git status">🌱 Git Status</button>
+          <button class="quick-cmd" data-cmd="pwd">📍 Current Path</button>
+          <button class="quick-cmd" data-cmd="help">❓ Help</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3 class="section-title">Model</h3>
+        <select id="model-select" class="model-select">
+          <option value="mistral" selected>Mistral</option>
+          <option value="llama2">Llama 2</option>
+          <option value="codellama">Code Llama</option>
+          <option value="gemma">Gemma</option>
+        </select>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="connection-status">
+          <span class="status-dot" id="ollama-status"></span>
+          <span class="status-text">Ollama</span>
+        </div>
+        <div class="keyboard-hint">
+          <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to send
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Terminal Area -->
+    <main class="terminal-container">
+      <!-- Terminal Window -->
+      <div class="terminal-window">
+        <!-- Terminal Header -->
+        <div class="terminal-header">
+          <div class="window-controls">
+            <span class="control close"></span>
+            <span class="control minimize"></span>
+            <span class="control maximize"></span>
+          </div>
+          <div class="terminal-title">
+            <span id="terminal-title">nlsh — Natural Language Shell</span>
+          </div>
+          <div class="terminal-actions">
+            <button class="action-btn" id="clear-btn" title="Clear Terminal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3,6 5,6 21,6"></polyline>
+                <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"></path>
+              </svg>
+            </button>
+            <button class="action-btn" id="voice-btn" title="Voice Input (Ctrl+O)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Body -->
+        <div class="terminal-body" id="terminal-body">
+          <!-- Welcome Message -->
+          <div class="welcome-message">
+            <pre class="ascii-art">
+ ███╗   ██╗██╗     ███████╗██╗  ██╗
+ ████╗  ██║██║     ██╔════╝██║  ██║
+ ██╔██╗ ██║██║     ███████╗███████║
+ ██║╚██╗██║██║     ╚════██║██╔══██║
+ ██║ ╚████║███████╗███████║██║  ██║
+ ╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝  ╚═╝
+            </pre>
+            <p class="welcome-subtitle">Natural Language Shell Interface</p>
+            <div class="system-info">
+              <span class="info-item">📦 Model: <span id="current-model">mistral</span></span>
+              <span class="info-item">💻 Platform: <span id="current-platform">Windows</span></span>
+              <span class="info-item">📁 Path: <span id="current-path">~</span></span>
+            </div>
+            <p class="welcome-hint">💡 Type natural language commands or use <kbd>help</kbd> for guidance</p>
+          </div>
+
+          <!-- Terminal Output Area -->
+          <div class="terminal-output" id="terminal-output"></div>
+        </div>
+
+        <!-- Terminal Input -->
+        <div class="terminal-input-container">
+          <div class="input-wrapper">
+            <span class="prompt" id="prompt-label">nlsh ❯</span>
+            <input 
+              type="text" 
+              id="terminal-input" 
+              class="terminal-input" 
+              placeholder="Type a command in plain English..."
+              autocomplete="off"
+              spellcheck="false"
+            >
+            <div class="input-suggestion" id="input-suggestion"></div>
+          </div>
+          <button class="send-btn" id="send-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22,2 15,22 11,13 2,9"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Floating Hints Panel -->
+      <div class="hints-panel" id="hints-panel">
+        <div class="hints-header">
+          <span>💡 Try saying:</span>
+          <button class="hints-close" id="hints-close">×</button>
+        </div>
+        <div class="hints-list">
+          <span class="hint-chip" data-hint="install pandas">install pandas</span>
+          <span class="hint-chip" data-hint="create file test.txt">create file test.txt</span>
+          <span class="hint-chip" data-hint="go to Documents">go to Documents</span>
+          <span class="hint-chip" data-hint="git status">git status</span>
+          <span class="hint-chip" data-hint="show files">show files</span>
+          <span class="hint-chip" data-hint="python print hello world">python print hello world</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading-overlay">
+    <div class="loading-spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-ring"></div>
+      <div class="spinner-ring"></div>
+    </div>
+    <p class="loading-text" id="loading-text">⏳ Generating command...</p>
+  </div>
+
+  <!-- Voice Recording Modal -->
+  <div class="voice-modal" id="voice-modal">
+    <div class="voice-modal-content">
+      <div class="voice-animation">
+        <div class="voice-wave"></div>
+        <div class="voice-wave"></div>
+        <div class="voice-wave"></div>
+        <div class="voice-wave"></div>
+        <div class="voice-wave"></div>
+      </div>
+      <p class="voice-status">🎤 Listening...</p>
+      <button class="voice-cancel-btn" id="voice-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
